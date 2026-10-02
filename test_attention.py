@@ -1,5 +1,6 @@
 import torch
 from model.attention import scaled_dot_product_attention
+from model.attention import MultiHeadAttention
 
 B,h,L,d_k=2,4,5,64
 
@@ -33,3 +34,28 @@ assert out.shape==(B,h,3,d_k)
 assert w.shape==(B,h,3,L)
 
 print("All attention tests passed")
+
+mha=MultiHeadAttention(256,4)
+
+x=torch.randn(2,7,256)
+mha_output=mha(x,x,x)
+
+assert mha_output.shape==(2,7,256)
+assert mha.attention_weights.shape==(2,4,7,7)
+
+qx=torch.randn(2,5,256)
+kv=torch.randn(2,7,256)
+mhax_out=mha(qx,kv,kv)
+
+assert mhax_out.shape==(2,5,256)
+assert mha.attention_weights.shape==(2,4,5,7)
+
+mask=torch.zeros(2,1,1,7,dtype=torch.bool)
+mask[...,-2:]=True
+mha(qx,kv,kv,mask)
+assert mha.attention_weights[...,-2:].abs().max()<1e-6
+
+n=sum(p.numel() for p in mha.parameters())
+assert n==263168,n
+
+print("multi-head attention tests passed")
