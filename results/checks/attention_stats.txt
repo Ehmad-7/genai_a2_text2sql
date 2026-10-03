@@ -1,0 +1,7 @@
+generated <cK> tokens analysed: 634 (from 300 dev examples, greedy)
+peak on a question token          : 88.3%
+peak anywhere in the column list  : 11.7%
+peak on its own <cK> token        : 1.1%
+peak inside its own column span   : 4.9%
+mean attention mass on own span   : 7.4%
+mean attention mass on question   : 52.2%
