@@ -1,0 +1,3 @@
+Trainable parameters: 7577600
+initial loss: 9.41618537902832
+Transformer test passed
