@@ -141,3 +141,25 @@ def beam_search(model,src,beam_size=4,max_len=64):
         return finished[0][1]
     return ys[scores.argmax(), 1:].tolist()     
         
+        
+
+def _quote(val):
+    s = str(val)
+    try:
+        float(s)
+        return s
+    except ValueError:
+        return "'" + s.replace("'", "''") + "'"
+
+
+def to_sql(query, header, table="table"):
+    """{"sel", "agg", "conds"} + real column names -> readable SQL string."""
+    def col(i):
+        return header[i] if 0 <= i < len(header) else f"<c{i}: invalid column>"
+    agg = AGG_OPS[query["agg"]]
+    sel = f"{agg}({col(query['sel'])})" if agg else col(query["sel"])
+    sql = f"SELECT {sel} FROM {table}"
+    if query["conds"]:
+        parts = [f"{col(c)} {COND_OPS[o]} {_quote(v)}" for c, o, v in query["conds"]]
+        sql += " WHERE " + " AND ".join(parts)
+    return sql
