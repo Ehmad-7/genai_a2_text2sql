@@ -6,3 +6,4 @@ spm_corpus.txt
 __pycache__/
 checkpoints/
 *.pt
+!model_weights/best.pt
