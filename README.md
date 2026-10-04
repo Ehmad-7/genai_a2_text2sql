@@ -1,12 +1,14 @@
 # Text-to-SQL with a Transformer built from scratch
 
-Generative AI, Assignment 02 (Fall 2026). An English question plus the column names of one table goes in, and a SQL query comes out. The model is the original encoder-decoder Transformer from *Attention Is All You Need*, written in plain PyTorch layers (no `nn.Transformer`, no `nn.MultiheadAttention`, no Hugging Face, no pretrained weights) and trained once from random initialisation on WikiSQL.
+Generative AI, Assignment 02 (Fall 2026). An English question plus the column names of one table goes in, and a SQL query comes out. The model is the original encoder-decoder Transformer from *Attention Is All You Need*, written in plain PyTorch layers (no `nn.Transformer`, no `nn.MultiheadAttention`, no Hugging Face, no pretrained weights) and trained once from random initialisation on WikiSQL. It runs behind a small FastAPI web page.
 
 ```
 Columns : Player, No., Nationality, Position, Years in Toronto, School/Club Team
 Question: What is Terrence Ross' nationality?
 SQL     : SELECT Nationality FROM table WHERE Player = 'terrence ross'
 ```
+
+![Front end](results/fig5_frontend.png)
 
 ## Headline results
 
@@ -16,7 +18,7 @@ SQL     : SELECT Nationality FROM table WHERE Player = 'terrence ross'
 | Dev | beam (4) | 64.15 | 70.98 | 0.26 |
 | Test | beam (4) | 64.14 | 70.41 | 0.31 |
 
-Scores are from the official WikiSQL evaluator. The original LSTM sequence-to-sequence baseline reaches about 36% execution accuracy on test. Beam search (k=4) was chosen from the dev results and the test split was decoded once. Details in `results/table3_metrics.md`.
+Scores are from the official WikiSQL evaluator. The original LSTM sequence-to-sequence baseline reaches about 36% execution accuracy on test. Beam search (k=4) was chosen from the dev results, and the test split was decoded once. Details in `results/table3_metrics.md`.
 
 ## How the task is framed
 
@@ -47,7 +49,7 @@ Training: Adam (betas 0.9 and 0.98, eps 1e-9), the paper's warmup schedule with 
 ## Design choices worth knowing
 
 - **Masks:** `True` means "hide" everywhere. The padding mask has shape `(B, 1, 1, L)`, the causal mask `(1, 1, T, T)`, and the decoder self-attention mask is their logical OR. Masked scores are filled with -1e9 before the softmax.
-- **Initialisation:** the shared embedding is initialised with std `d_model ** -0.5` (with the pad row zeroed) and the other matrices with Xavier uniform. The embedding is multiplied by the square root of d_model, and with the output layer tied to it a unit-variance embedding would give a huge starting loss.
+- **Initialisation:** the shared embedding is initialised with std `d_model ** -0.5` (with the pad row zeroed) and the other matrices with Xavier uniform. The embedding is multiplied by the square root of d_model, and with the output layer tied to it, a unit-variance embedding would give a huge starting loss.
 - **Loss:** summed over non-pad tokens and averaged per token, for both train and dev, so the two curves are comparable.
 - **Beam search:** raw summed log-probability with no length normalisation, and the search stops once four hypotheses have finished.
 - **Parser:** a new condition starts only at the pattern `and <cN> <op>`, so values that contain the words "and" or "where" are not split.
@@ -82,9 +84,44 @@ Figures:
 2. `fig2_loss_curves.png`: training and dev loss per epoch
 3. `fig3_lr_schedule.png`: learning-rate schedule
 4. `fig4_attention_map.png`: cross-attention map for one dev example
-5. `fig5_frontend.png`: front-end screenshot (TODO)
+5. `fig5_frontend.png`: front-end screenshot
 
-In the last decoder layer, averaged over heads, the generated `<cK>` tokens mostly attend to the question words that name the attribute and not to the matching column in the source (peak inside the own column span in 4.9% of 634 cases). `results/attention_analysis.md` gives the numbers and the caveats.
+Main findings:
+
+- The WHERE clause is the weakest component (74.49%), because it needs the right column, operator and a correctly copied value. The largest failure bucket is the wrong aggregation (8.9% of dev), followed by a wrong select column and a wrong WHERE column (8.2% each).
+- In the last decoder layer, averaged over heads, the generated `<cK>` tokens mostly attend to the question words that name the attribute and not to the matching column in the source (peak inside the own column span in 4.9% of 634 cases). `results/attention_analysis.md` gives the numbers and the caveats.
+- Feeding the gold dev targets through the tokenizer, the parser and the official evaluator gives 99.49% execution accuracy, so no score can reach 100% under this framing (lowercasing and tokenizer normalisation change a few gold values).
+
+## Front end
+
+A FastAPI backend serves a plain HTML page. The model is loaded once at startup and decodes with beam search (k=4) on the CPU.
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload      # then open http://127.0.0.1:8000
+```
+
+Type a question and the column names of one table, separated by commas, and the page shows the generated SQL with the real column names. Expand "What the model actually produced" to see the raw output (`select count <c3> where <c4> = 8`).
+
+API:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/translate \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How many years have a weeks at #1 value of exactly 8?", "columns": "Artist, Country, Number-one single(s), Year, Weeks at #1, Straight to #1 ?"}'
+```
+
+The response has `sql`, `raw`, `query` and `error`. Interactive API docs are at `/docs`, and `/health` returns `{"status": "ok"}`.
+
+Limits of the model and the app:
+
+- One table, one SELECT column (optionally with MAX, MIN, COUNT, SUM or AVG), and WHERE conditions joined by AND with `=`, `>` or `<`. This is the WikiSQL query shape.
+- Everything is lower-cased by the model, so values in the SQL are lower-case.
+- The model picks columns by index, so if it chooses an index beyond the columns you typed, the SQL shows `<cN: invalid column>` instead of failing.
+- Column names with spaces are written unquoted in the readable SQL, so the string is for reading and is not guaranteed to run as is.
+- Input is limited to 500 characters per field, 64 columns and 500 source tokens. The page echoes results as text, never as HTML.
+
+Live demo: TODO (add the link if you deploy)
 
 ## Repository layout
 
@@ -105,7 +142,8 @@ plot_lr.py, plot_loss.py   figures
 test_*.py              unit tests for every component
 results/               tables, figures, logs, prediction files, check outputs
 model_weights/best.pt  trained checkpoint (epoch 19)
-app/                   web front end (TODO)
+app/                   FastAPI front end (main.py, inference.py, static/index.html)
+requirements.txt       dependencies for the app
 ```
 
 ## Setup
@@ -115,12 +153,15 @@ git clone https://github.com/Ehmad-7/genai_a2_text2sql.git
 cd genai_a2_text2sql
 python -m venv .venv && source .venv/bin/activate
 pip install torch sentencepiece records babel tqdm tabulate matplotlib numpy
+pip install fastapi uvicorn
 pip install "sqlalchemy<2"      # only if the official evaluator fails on `records`
 
 git clone https://github.com/salesforce/WikiSQL
 (cd WikiSQL && tar xjf data.tar.bz2)
 ln -s ../WikiSQL starter/WikiSQL
 ```
+
+The trained model and tokenizer are in the repository, so the front end needs only `requirements.txt`. The data and the evaluator are needed to reproduce training and evaluation.
 
 ## Reproduce
 
@@ -167,10 +208,6 @@ Notes for Google Colab: select a T4 GPU, clone the repo and WikiSQL, run `data_p
 ## Correctness checks
 
 Causal mask, padding mask, weight sharing, attention rows, learning-rate schedule and the gold round-trip (99.49% execution accuracy) are listed in `results/correctness_checks.md`, with raw output in `results/checks/`.
-
-## Front end
-
-TODO: screenshot and run command (`streamlit run app/app.py`).
 
 ## Links
 
