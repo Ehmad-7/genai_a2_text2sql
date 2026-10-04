@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text-to-SQL</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2430; }
+  h1 { margin-bottom: .2rem; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input { width: 100%; padding: .6rem; font-size: 1rem; box-sizing: border-box; border: 1px solid #c8ccd4; border-radius: 6px; }
+  button { margin-top: 1rem; padding: .6rem 1.2rem; font-size: 1rem; border: 0; border-radius: 6px; background: #2f6feb; color: #fff; cursor: pointer; }
+  button.ex { background: #eef1f6; color: #1f2430; margin: .2rem .3rem 0 0; padding: .3rem .7rem; font-size: .85rem; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+  .err { color: #b42318; margin-top: 1rem; }
+  small { color: #667085; }
+</style>
+</head>
+<body>
+<h1>Ask a table in plain English</h1>
+<p>Type a question and the column names of <b>one</b> table. A Transformer trained from scratch on WikiSQL writes the SQL.</p>
+
+<div id="examples"></div>
+
+<label for="q">Question</label>
+<input id="q" placeholder="What is the capital of France?">
+<label for="c">Column names (comma-separated)</label>
+<input id="c" placeholder="Country, Capital, Population">
+<button id="go">Generate SQL</button>
+
+<div id="error" class="err"></div>
+<div id="out" hidden>
+  <h3>SQL</h3><pre id="sql"></pre>
+  <details><summary>What the model actually produced</summary><pre id="raw"></pre></details>
+</div>
+<p><small>Limits: one table, one SELECT column (optionally MAX/MIN/COUNT/SUM/AVG), WHERE conditions joined by AND with =, &gt; or &lt;. Text is lower-cased by the model. Test accuracy on WikiSQL: 70.4% execution, 64.1% logical form.</small></p>
+
+<script>
+const EXAMPLES = [
+  ["What is Terrence Ross' nationality?", "Player, No., Nationality, Position, Years in Toronto, School/Club Team"],
+  ["How many schools did the player from Duke attend?", "Player, No., Nationality, Position, School/Club Team"],
+  ["What is the highest number of points scored by Lakers?", "Team, Season, Points, Rebounds, Assists"],
+];
+const $ = id => document.getElementById(id);
+
+EXAMPLES.forEach(([q, c]) => {
+  const b = document.createElement("button");
+  b.className = "ex"; b.textContent = q;
+  b.onclick = () => { $("q").value = q; $("c").value = c; };
+  $("examples").appendChild(b);
+});
+
+$("go").onclick = async () => {
+  $("error").textContent = ""; $("out").hidden = true;
+  $("go").disabled = true; $("go").textContent = "Decoding...";
+  try {
+    const r = await fetch("/api/translate", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: $("q").value, columns: $("c").value}),
+    });
+    if (!r.ok) throw new Error("Server error " + r.status);
+    const d = await r.json();
+    if (d.error) $("error").textContent = d.error;
+    if (d.sql || d.raw) {
+      $("sql").textContent = d.sql || "(no SQL)";     // textContent, never innerHTML: user text is echoed
+      $("raw").textContent = d.raw;
+      $("out").hidden = false;
+    }
+  } catch (e) { $("error").textContent = e.message; }
+  $("go").disabled = false; $("go").textContent = "Generate SQL";
+};
+</script>
+</body>
+</html>
