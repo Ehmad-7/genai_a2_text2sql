@@ -1,6 +1,6 @@
 # Qualitative samples (dev, beam search k=4)
 
-Five correct and five wrong examples, chosen with a fixed random seed. SQL uses the real column names.
+Five correct and five wrong examples, chosen with a fixed random seed. SQL uses the real column names. A wrong example is counted under its first failing component (parse, select column, aggregation, WHERE).
 
 ## Correct
 
